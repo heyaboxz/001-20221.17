@@ -1,0 +1,398 @@
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <arpa/inet.h>
+
+struct user_msg {
+	char choose;
+    char name[20];
+    char phone[20];
+    char addr[128];
+    char salary[20];
+    char age[10];
+	char id[20];
+	char pwd[20];
+	char class;
+    char stage;
+	char notice[128];
+}__attribute__((packed));
+
+int sys_quit_c(int sfd);
+int account_register_c(int sfd);
+int sys_login_c(int sfd);
+int modify_staff_info_c(int sfd);
+int del_staff_c(int sfd);
+int add_staff_c(int sfd);
+int show_self_info_c(int sfd);
+
+#define ERR_MSG(msg) do{\
+	printf("%s :%d\n",__func__,__LINE__);\
+	perror(msg);\
+	}while(0)
+#define PORT 6666
+#define IP "127.0.0.1"
+
+int main(int argc, const char *argv[])
+{
+    char choose; 
+    int sfd = 0;
+	//1.创建字节流式套接字
+	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sfd < 0){
+		ERR_MSG("socket");
+		return -1;
+	}
+    //允许端口快速重用
+	int reuse = 1;
+	if(setsockopt(sfd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse))<0){
+		ERR_MSG("socketopt");
+		return -1;
+	}
+	//填充服务器的地址信息结构体
+	struct sockaddr_in sin;
+	sin.sin_family 		= AF_INET;
+	sin.sin_port 		= htons(PORT); 	//服务器的PORT
+	sin.sin_addr.s_addr = inet_addr(IP); 	//服务器的IP
+	
+	//连接服务器
+	if(connect(sfd, (struct sockaddr*)&sin, sizeof(sin)) < 0)
+	{
+		ERR_MSG("connect");
+		return -1;
+	}
+    printf("connect sucess sfd=%d\n",sfd);
+ 
+
+	while(1){
+		printf("请输入r:register **only for sys mgr.**\n"); 
+        printf("请输入l:sys login \n");
+        printf("请输入q:sys quit\n");
+        choose =getchar();
+        EXIT:
+
+        while(getchar()!=10);
+       // printf("已输入choose=%c\n",choose); 
+        switch(choose){
+            case 'r':
+            account_register_c(sfd);
+            break;
+            
+            case 'l':
+                sys_login_c(sfd);
+                while(1){
+                    printf("请选择 a:add staff info **only for sys mgr.**\n");
+                    printf("请选择 d:delete staff info **only for sys mgr.**\n");
+                    printf("请选择 m:modify staff info **only for sys mgr.**\n");
+                    printf("请选择 s:show self info \n");
+                    printf("请选择 b:返回上级\n");
+                    choose=getchar();
+                    switch(choose){
+                        case 'a':
+                            add_staff_c(sfd);continue;
+                        case 'd':
+                            del_staff_c(sfd);continue;
+                        case 's':
+                            show_self_info_c(sfd);continue;
+                        case 'm':
+                            modify_staff_info_c(sfd);continue;
+                        case 'b':
+                            goto EXIT;                            //要求回到上级
+                    }
+                }
+                break;
+            case 'q':
+            sys_quit_c(sfd);
+            close(sfd);
+            exit(0);
+     }
+	}
+    return 0;
+}
+
+int show_self_info_c(int sfd)
+{
+    struct user_msg msg;
+	int res = 0;
+	msg.choose = 's' ;
+	if(send(sfd,&msg,sizeof(msg),0)<0){
+		ERR_MSG("send");
+		return -1;
+	}
+    printf("__%d__查看请求发送成功\n",__LINE__);
+	//接受服务器端发送的提示信息
+	bzero(&msg,sizeof(msg));
+	res = recv(sfd,&msg,sizeof(msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	printf("notice:%s\n name:%s\n addr :%s\n id : %s\n salary : %s\n age : %s\n",\
+	msg.notice,msg.name,msg.addr,msg.id,msg.salary,msg.age);
+	return 0;
+}
+
+int sys_quit_c(int sfd)
+{
+    struct user_msg msg;
+	int res = 0;
+	msg.choose = 'q' ;
+	if(send(sfd,&msg,sizeof(msg),0)<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	//接受服务器端发送的提示信息
+	bzero(&msg,sizeof(msg));
+	res = recv(sfd,&msg,sizeof(msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	printf("%s\n",msg.notice);
+	return 0;
+}
+
+int account_register_c(int sfd)
+{
+    int res = 0;
+    struct user_msg msg;
+    memset(&msg,0,sizeof(struct user_msg));
+	printf("请输入账号：\n");
+	scanf("%s",msg.id);
+    while(getchar()!=10);
+    
+	printf("请输入密码:\n");
+	scanf("%s",msg.pwd);
+    while(getchar()!=10);
+    
+    printf("请输入class:管理员1,other 0\n");
+	msg.class=getchar();
+    while(getchar()!=10);
+    
+	msg.choose = 'r' ;
+    msg.stage = 1;
+    
+    printf("id即将发送id=%s choose=%c sfd=%d\n",msg.id,msg.choose,sfd);
+	if(send(sfd,&msg,sizeof(msg),0)<0){
+		ERR_MSG("send");
+		return -1;
+	}
+    printf("id发送成功id=%s sfd=%d\n",msg.id,sfd);
+	//接受服务器端发送的提示信息
+	bzero(&msg,sizeof(msg));
+	res = recv(sfd,&msg,sizeof(msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	else if(0==res){
+		printf("server is closed\n");
+	}
+	printf("notice=%s\n",msg.notice);
+	return 0;
+}
+
+int sys_login_c(int sfd)
+{
+    struct user_msg msg;
+    memset(&msg,0,sizeof(struct user_msg));
+	int res = 0;
+
+	printf("请输入账号id：\n");
+	scanf("%s",msg.id);
+    while(getchar()!=10);
+    
+	printf("请输入密码pwd:\n");
+	scanf("%s",msg.pwd);
+    while(getchar()!=10);
+
+    msg.choose = 'l' ;
+
+    printf("id即将发送登录信息id=%s choose=%c sfd=%d\n",msg.id,msg.choose,sfd);
+	if(send(sfd,&msg,sizeof(struct user_msg),0)<0){
+		ERR_MSG("send");
+		return -1;
+	}
+    printf("id发送成功，将会接受登录成功提示id=%s sfd=%d\n",msg.id,sfd);
+	//接受服务器端发送的提示信息
+	bzero(&msg,sizeof(msg));
+	res = recv(sfd,&msg,sizeof(msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	else if(0==res){
+		printf("server is closed\n");
+	}
+    //判断一下服务器发来的提示，如果是ID不存在，需要重新回到登录界面
+    if(strncmp(msg.notice,"NOTEXIST",8)==0){
+        sys_login_c(sfd);
+    }
+	printf("登录成功notice=%s\n",msg.notice);
+	return 0;
+}
+
+
+int modify_staff_info_c(int sfd)
+{
+    struct user_msg msg;
+    char modify_iteam[20]="";
+    printf("请输入需要修改人员的id\n");
+    scanf("%s",msg.id);
+    while(getchar()!=10);
+    //先发送ID去验证有没有这个人
+    if(send(sfd,&msg,sizeof(msg),0)<0){
+    		ERR_MSG("send");
+    		return -1;
+    	}
+    //接受服务器端发送的提示信息并判断
+    	bzero(&msg,sizeof(msg));
+    	res = recv(sfd,&msg,sizeof(msg),0);
+    	if(res<0){
+    		ERR_MSG("send");
+    		return -1;
+    	}
+    	else if(0==res){
+    		printf("server is closed\n");
+    	}
+        //如果存在这个ID，可以修改相关条款
+    if(st(const char * s1, const char * s2)){}
+    printf("请输入需要修改的条款\n");
+    scanf("%s",modify_iteam);
+    while(getchar()!=10);
+	int res = 0;
+	msg.choose = 'm' ;
+    switch(modify_iteam){
+        case 'i'：
+
+    	printf("请输入需要修改的name\n");
+    	scanf("%s",msg.name);
+        while(getchar()!=10);
+        
+        printf("请输入需要修改的phone\n");
+    	scanf("%s",msg.phone);
+        while(getchar()!=10);
+        
+        printf("请输入需要修改的newaddr\n");
+    	scanf("%s",msg.name);
+        while(getchar()!=10);
+        
+        printf("请输入需要修改的的员newsalary\n");
+    	scanf("%s",(msg.salary));
+        while(getchar()!=10);
+        
+        printf("请输入需要修改的age");
+    	scanf("%s",(msg.age));
+        while(getchar()!=10);
+        
+    	if(send(sfd,&msg,sizeof(msg),0)<0){
+    		ERR_MSG("send");
+    		return -1;
+    	}
+    	//接受服务器端发送的提示信息
+    	bzero(&msg,sizeof(msg));
+    	res = recv(sfd,&msg,sizeof(msg),0);
+    	if(res<0){
+    		ERR_MSG("send");
+    		return -1;
+    	}
+    	else if(0==res){
+    		printf("server is closed\n");
+    	}
+    	printf("%s\n",msg.notice);
+        }
+	return 0;
+}
+
+int del_staff_c(int sfd)
+{
+    int res = 0;
+    struct user_msg msg;
+    printf("清输入要删除人员的id");
+    fgets(msg.id,sizeof(msg.id),stdin);
+	
+	msg.choose = 'd' ;
+	if(send(sfd,&msg,sizeof(struct user_msg),0)<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	//接受服务器端发送的提示信息
+	bzero(&msg,sizeof(struct user_msg));
+	res = recv(sfd,&msg,sizeof(struct user_msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	else if(0==res){
+		printf("server is closed\n");
+	}
+	printf("%s\n",msg.notice);
+	return 0;
+		
+}
+
+int add_staff_c(int sfd)
+{
+    struct user_msg msg;
+    int res = 0;
+    bzero(&msg,sizeof(msg));
+    printf("输入id:\n");
+    scanf("%s",msg.id);
+    while(getchar()!=10);
+    
+    printf("输入name:\n");
+    scanf("%s",msg.name);
+    while(getchar()!=10);
+    
+    printf("输入phone:\n");
+    scanf("%s",msg.phone);
+    while(getchar()!=10);
+    
+    printf("输入addr\n");
+    scanf("%s",msg.addr);
+    while(getchar()!=10);
+    
+    printf("输入salary:\n");
+    scanf("%s",(msg.salary));
+    while(getchar()!=10);
+    
+    printf("输入age:\n");
+    scanf("%s",(msg.age));
+    while(getchar()!=10);
+    
+    msg.choose = 'a';
+
+    printf("__%d__ sfd = %d res = %d\n",__LINE__,sfd,res);
+    res = send(sfd,&msg,sizeof(struct user_msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+    printf("发送成功 : choose = %c id=%s\n",msg.choose,msg.id);
+	//接受服务器端发送的提示信息
+	printf("即将接受到你添加成功的信息choose=%c\n",msg.choose);
+	bzero(&msg,sizeof(msg));
+	res = recv(sfd,&msg,sizeof(msg),0);
+	if(res<0){
+		ERR_MSG("send");
+		return -1;
+	}
+	else if(0==res){
+		printf("server is closed\n");
+	}
+	printf("__%d__%s\n",__LINE__,msg.notice);
+	return 0;
+		
+}
+
+
+
+
+
+
+
